@@ -1,0 +1,59 @@
+name: Deploy Frontend to EC2
+
+on:
+  push:
+    branches: ['dev']
+  pull_request:
+    branches: ['dev']
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build and Hot-Swap Container
+        run: |
+          docker compose up -d --build --remove-orphans
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_APP_ACCESS_TOKEN: ${{ secrets.VITE_APP_ACCESS_TOKEN }}
+          VITE_APP_TENANT_KEY: ${{ secrets.VITE_APP_TENANT_KEY }}
+          VITE_APP_TENANT_ID: ${{ secrets.VITE_APP_TENANT_ID }}
+
+      - name: Verify Deployment Health
+        run: |
+          echo "Waiting for container to become healthy..."
+          # Loop 12 times, sleeping 5s each (total 60s max)
+          for i in {1..12}; do
+            STATUS=$(docker inspect -f '{{.State.Health.Status}}' hms_frontend)
+            echo "Attempt $i: Current status is '$STATUS'"
+            
+            if [ "$STATUS" == "healthy" ]; then
+              echo "✅ Deployment is healthy!"
+              exit 0
+            fi
+            
+            if [ "$STATUS" == "unhealthy" ]; then
+              echo "❌ Deployment is UNHEALTHY. Checking logs..."
+              docker logs hms_frontend --tail 50
+              exit 1
+            fi
+            
+            sleep 5
+          done
+          
+          echo "⌛ Healthcheck timed out (still starting)! Checking logs..."
+          docker logs hms_frontend --tail 50
+          exit 1
+
+
+      - name: Post-Deploy Cleanup
+        run: |
+          docker image prune -f
+          docker builder prune -f --filter "until=24h"

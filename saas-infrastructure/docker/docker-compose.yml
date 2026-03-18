@@ -1,0 +1,30 @@
+#version: "3.9"
+services:
+
+  frontend:
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+        - VITE_APP_ACCESS_TOKEN=${VITE_APP_ACCESS_TOKEN}
+        - VITE_APP_TENANT_KEY=${VITE_APP_TENANT_KEY}
+        - VITE_APP_TENANT_ID=${VITE_APP_TENANT_ID}
+
+    image: hms/frontend:latest
+
+    container_name: hms_frontend
+
+    ports:
+      - "80:80"
+
+    restart: always
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q --server-response http://localhost 2>&1 | grep 'HTTP/1.1 401' || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./public/config.js:/usr/share/nginx/html/config.js
